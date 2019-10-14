@@ -105,6 +105,15 @@ end
 @adjoint Core.getfield(xs::NTuple{N,Any}, i::Integer) where N =
   (xs[i], Δ -> (ntuple(j -> i == j ? Δ : nothing, Val(N)), nothing))
 
+@adjoint function Base.getfield(xs::NamedTuple, i)
+  val = literal_getproperty(xs, Val(i))
+  function back(Δ)
+    t = zip(keys(xs), ntuple(x -> x == i ? Δ : nothing, length(xs)))
+    ((;t...), nothing)
+  end
+  val, back
+end
+
 @adjoint function Base.first(xs::Tuple)
   drest = map(_->nothing, tail(xs))
   first(xs), Δ -> ((Δ, drest...),)
@@ -152,19 +161,48 @@ end
 @generated pair(::Val{k}, v) where k = :($k = v,)
 
 @adjoint function literal_getproperty(x, ::Val{f}) where f
-  val = getproperty(x, f)
+  # @show x, "in getproip"
+  val = literal_getproperty(x, Val(f))
   function back(Δ)
     accum_param(__context__, val, Δ)
     if isimmutable(x)
-      ((;nt_nothing(x)...,pair(Val(f), Δ)...), nothing)
+      # m = nt_nothing(x)
+      # @show m, f, Δ
+      p = !isa(f, Symbol) ? keys(x)[f] : f
+      # k = pair(Val(p), Δ)
+      # @show k
+      t = ((;nt_nothing(x)...,pair(Val(p), Δ)...), nothing)
+      # @show t
     else
       dx = grad_mut(__context__, x)
       dx[] = (;dx[]...,pair(Val(f),accum(getfield(dx[], f), Δ))...)
       return (dx,nothing)
     end
   end
+  # @show back(1)
   unwrap(val), back
 end
+
+# @adjoint function literal_getproperty(x::NamedTuple, ::Val{f}) where f
+#   @show x, f # unwrap(x[f])
+#   val = literal_getproperty(x, f) # getproperty(x, f)
+#   function back(Δ)
+  
+#     # accum_param(__context__, val, Δ)
+#     # if isimmutable(x)
+#     #   @show nt_nothing(x)
+#     #   @show Val(f), Δ
+#     #   t = ((;nt_nothing(x)...,pair(Val(f), Δ)...), nothing)
+#     #   @show t
+#     # else
+#     #   dx = grad_mut(__context__, x)
+#     #   dx[] = (;dx[]...,pair(Val(f),accum(getfield(dx[], f), Δ))...)
+#     #   return (dx,nothing)
+#     # end
+#   end
+#   unwrap(val), back
+# end
+
 
 _pullback(cx::Context, ::typeof(getproperty), x, f::Symbol) =
   _pullback(cx, literal_getproperty, x, Val(f))
