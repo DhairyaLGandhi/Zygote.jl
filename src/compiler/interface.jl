@@ -60,7 +60,7 @@ end
 
 @forward Params.order Base.iterate, Base.length
 
-function Base.push!(ps::Params, x)
+function pushparams!(ps::Params, x)
   if !(x in ps.params)
     push!(ps.order, x)
     push!(ps.params, x)
@@ -68,9 +68,15 @@ function Base.push!(ps::Params, x)
   return ps
 end
 
-Base.push!(ps::Params, x...) = (foreach(x -> push!(ps, x), x); ps)
+@adjoint function pushparams!(ps::Params, x)
+  pushparams!(ps, x), function (Δ)
+    (nothing, Δ)
+  end
+end
 
-Params(xs) = push!(Params(), xs...)
+pushparams!(ps::Params, x...) = (foreach(x -> pushparams!(ps, x), x); ps)
+
+Params(xs) = pushparams!(Params(), xs...)
 
 function Base.show(io::IO, ps::Params)
   print(io, "Params([")
